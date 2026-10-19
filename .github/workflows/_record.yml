@@ -1,0 +1,60 @@
+# Applies a run's results to state and files issues. Reusable; the caller holds the poll
+# concurrency group.
+name: _record
+
+on:
+  workflow_call:
+    inputs:
+      artifacts:
+        description: 'Glob of the artifacts holding result.json and delta files to apply'
+        required: true
+        type: string
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write   # commit state
+      issues: write     # rejection and denied-key issues
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ${{ inputs.artifacts }}
+          path: ${{ runner.temp }}/record
+      # Applies the results as a delta onto the latest branch tip and pushes, retrying if another
+      # push lands first.
+      - name: Commit state
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mapfile -t files < <(find "$RUNNER_TEMP/record" -name '*.json' | sort)
+          if [[ ${#files[@]} -eq 0 ]]; then echo 'Nothing to record.'; exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3; do
+            git fetch --quiet origin "$GITHUB_REF_NAME"
+            git reset --quiet --hard FETCH_HEAD
+            scripts/record.sh state "${files[@]}"
+            git add state/
+            git diff --cached --quiet && { echo 'State unchanged.'; exit 0; }
+            git commit --quiet -m "state: ${GITHUB_WORKFLOW} ${RUN_URL}"
+            git push --quiet origin "HEAD:$GITHUB_REF_NAME" && exit 0
+            echo "Push failed (attempt $attempt); retrying on the latest state." >&2
+          done
+          exit 1
+      - name: Open issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t files < <(find "$RUNNER_TEMP/record" -name '*.json' | sort)
+          [[ ${#files[@]} -eq 0 ]] || scripts/record.sh issues "${files[@]}"

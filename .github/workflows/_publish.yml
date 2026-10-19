@@ -1,0 +1,64 @@
+# Publishes the run's admitted packages, one job per format. Reusable; the caller holds the poll
+# concurrency group and provides the poll-admit-* artifacts.
+name: _publish
+
+on:
+  workflow_call:
+    secrets:
+      ARCHIVE_GPG_KEY:
+        required: false
+      ARCHIVE_GPG_PASSPHRASE:
+        required: false
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [rpm, deb]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends createrepo-c apt-utils > /dev/null
+      - name: Download admissions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: poll-admit-*
+          path: admit
+      - name: Publish
+        env:
+          FORMAT: ${{ matrix.format }}
+          ARCHIVE_GPG_KEY: ${{ secrets.ARCHIVE_GPG_KEY }}
+          ARCHIVE_GPG_PASSPHRASE: ${{ secrets.ARCHIVE_GPG_PASSPHRASE }}
+        # One artifact downloads straight into admit/, several into admit/<name>/: find the
+        # admit dirs by their result.json.
+        run: |
+          mapfile -t dirs < <(find admit -name result.json -printf '%h\n' 2>/dev/null)
+          PUBLISH_DIR=$PWD/publish-target scripts/publish.sh "$FORMAT" delta "${dirs[@]}"
+      # The prototype's target is transient: keep it briefly for inspection (and for prune).
+      - name: Upload publish target
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: target-publish-${{ matrix.format }}
+          path: publish-target/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload delta
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: poll-delta-${{ matrix.format }}
+          path: delta/delta-${{ matrix.format }}.json
+          retention-days: 7

@@ -1,0 +1,91 @@
+# Polls the service repos, admits new releases, publishes their packages, records state, and prunes.
+name: poll
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  # Config changes (a new repo, a deny) take effect right away.
+  push:
+    paths:
+      - config/repos.yaml
+  workflow_dispatch:
+
+# Shared by every workflow that writes the target or state; a running one is never cancelled.
+concurrency:
+  group: poll
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  # The commit whose state and config discover and admit read: the latest main, not the one the
+  # run was queued on. A run that waited behind another would otherwise rediscover what that one
+  # just recorded.
+  config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - name: Resolve the latest commit
+        id: sha
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}" --jq .sha)" >> "$GITHUB_OUTPUT"
+
+  discover:
+    needs: config
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_discover.yml
+    with:
+      sha: ${{ needs.config.outputs.sha }}
+
+  admit:
+    needs: [config, discover]
+    if: needs.discover.outputs.count != '0'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_admit.yml
+    with:
+      matrix: ${{ needs.discover.outputs.matrix }}
+      sha: ${{ needs.config.outputs.sha }}
+    secrets:
+      MASTER_PUBLIC_ASC: ${{ secrets.MASTER_PUBLIC_ASC }}
+      MASTER_FPR: ${{ secrets.MASTER_FPR }}
+
+  # Runs for whatever was admitted; a failed admit job is retried by the next poll.
+  publish:
+    needs: admit
+    if: ${{ !cancelled() && needs.admit.result != 'skipped' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_publish.yml
+    secrets:
+      ARCHIVE_GPG_KEY: ${{ secrets.ARCHIVE_GPG_KEY }}
+      ARCHIVE_GPG_PASSPHRASE: ${{ secrets.ARCHIVE_GPG_PASSPHRASE }}
+
+  record:
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    permissions:
+      contents: write   # commit state
+      issues: write     # rejection issues
+    uses: ./.github/workflows/_record.yml
+    with:
+      artifacts: poll-*
+
+  # Every run, also with nothing new: a failed prune retries here.
+  prune:
+    needs: [discover, record]
+    if: ${{ !cancelled() && needs.discover.result == 'success' && needs.record.result != 'failure' }}
+    permissions:
+      contents: write   # commit state
+      issues: write     # denied-key and prune-failing issues
+      actions: read     # previous prune runs
+    uses: ./.github/workflows/_prune.yml
+    secrets:
+      ARCHIVE_GPG_KEY: ${{ secrets.ARCHIVE_GPG_KEY }}
+      ARCHIVE_GPG_PASSPHRASE: ${{ secrets.ARCHIVE_GPG_PASSPHRASE }}

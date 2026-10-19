@@ -1,0 +1,59 @@
+# Admits each new release, one job per release. Reusable; called by poll.
+# Uploads a poll-admit-<n> artifact per release for publish and record.
+name: _admit
+
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        description: 'JSON array of {repo, tag} from discover'
+        required: true
+        type: string
+      sha:
+        description: 'Commit to read state and config from (poll''s config job, as discover)'
+        required: true
+        type: string
+    secrets:
+      MASTER_PUBLIC_ASC:
+        required: true
+      MASTER_FPR:
+        required: true
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  admit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - name: Admit
+        env:
+          REPO: ${{ matrix.repo }}
+          TAG: ${{ matrix.tag }}
+          GITHUB_TOKEN: ${{ github.token }}
+          MASTER_PUBLIC_ASC: ${{ secrets.MASTER_PUBLIC_ASC }}
+          MASTER_FPR: ${{ secrets.MASTER_FPR }}
+        run: scripts/admit.sh "$REPO" "$TAG" admit
+      - name: Upload admission
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: poll-admit-${{ strategy.job-index }}
+          path: |
+            admit/result.json
+            admit/files/
+          retention-days: 7

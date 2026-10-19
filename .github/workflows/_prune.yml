@@ -1,0 +1,117 @@
+# Removes published packages outside retention or admitted with a denied repo key, then records
+# them. Reusable: poll calls it every run. The caller holds the poll concurrency group.
+name: _prune
+
+on:
+  workflow_call:
+    secrets:
+      ARCHIVE_GPG_KEY:
+        required: false
+      ARCHIVE_GPG_PASSPHRASE:
+        required: false
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [rpm, deb]
+    steps:
+      # The latest state, which may include this run's poll record.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+      - name: Install tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends createrepo-c apt-utils > /dev/null
+      # The prototype's target is transient: start from this run's publish target, if any.
+      - name: Download publish target
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: target-publish-${{ matrix.format }}
+          path: publish-target
+          merge-multiple: true
+      - name: Prune
+        env:
+          FORMAT: ${{ matrix.format }}
+          ARCHIVE_GPG_KEY: ${{ secrets.ARCHIVE_GPG_KEY }}
+          ARCHIVE_GPG_PASSPHRASE: ${{ secrets.ARCHIVE_GPG_PASSPHRASE }}
+        run: PUBLISH_DIR=$PWD/publish-target scripts/prune.sh "$FORMAT" delta
+      - name: Upload prune target
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: target-prune-${{ matrix.format }}
+          path: publish-target/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload delta
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prune-delta-${{ matrix.format }}
+          path: delta/prune-${{ matrix.format }}.json
+          retention-days: 7
+
+  record:
+    needs: prune
+    if: ${{ !cancelled() && needs.prune.result == 'success' }}
+    permissions:
+      contents: write   # commit state
+      issues: write     # denied-key issues
+    uses: ./.github/workflows/_record.yml
+    with:
+      artifacts: prune-delta-*
+
+  # Opens a "Prune failing" issue when prune failed in this run and the caller's previous run;
+  # closes it once prune succeeds.
+  report:
+    needs: [prune, record]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read     # the caller's previous run
+      issues: write     # the prune-failing issue
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      FAILED: ${{ needs.prune.result == 'failure' || needs.record.result == 'failure' }}
+      WORKFLOW_REF: ${{ github.workflow_ref }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      TITLE: Prune failing
+    steps:
+      - name: Open or close the issue
+        run: |
+          set -euo pipefail
+          issue=$(gh issue list --state open --label prune-failing --json number,title \
+            --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
+          if [[ "$FAILED" != true ]]; then
+            [[ -z "$issue" ]] || gh issue close "$issue" --comment "Prune succeeded again ([run](${RUN_URL}))."
+            exit 0
+          fi
+          # The caller's workflow file (e.g. .github/workflows/poll.yml), from owner/repo/<path>@<ref>.
+          workflow=${WORKFLOW_REF#"$GH_REPO"/}
+          workflow=${workflow%@*}
+          previous=$(gh api "repos/${GH_REPO}/actions/workflows/${workflow##*/}/runs?status=completed&per_page=1" \
+            --jq '.workflow_runs[0].id // empty')
+          if [[ -z "$previous" ]] || ! gh api --paginate "repos/${GH_REPO}/actions/runs/${previous}/jobs" \
+              --jq '.jobs[] | select((.name | startswith("prune / ")) and .conclusion == "failure") | .id' | grep -q .; then
+            echo "::warning::Prune failed; the next run retries it."
+            exit 0
+          fi
+          if [[ -z "$issue" ]]; then
+            gh label create prune-failing --force > /dev/null
+            gh issue create --title "$TITLE" --label prune-failing \
+              --body "Prune failed in two runs in a row. Latest: ${RUN_URL}"
+          fi
+          exit 1

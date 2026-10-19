@@ -1,0 +1,4 @@
+# Service repos the distributor polls, each with optional allow, deny, retain, and keep-releases.
+repos:
+  - name: OpenCHAMI/github-actions-testbed
+    allow: [testbed, testbed-quadlet]

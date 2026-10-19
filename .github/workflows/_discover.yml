@@ -1,0 +1,47 @@
+# Lists new releases to admit. Reusable; called by poll.
+name: _discover
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: 'Commit to read state and config from (poll''s config job)'
+        required: true
+        type: string
+    outputs:
+      matrix:
+        description: 'JSON array of {repo, tag}, oldest first, at most 256'
+        value: ${{ jobs.discover.outputs.matrix }}
+      count:
+        description: 'Number of entries in matrix'
+        value: ${{ jobs.discover.outputs.count }}
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      count: ${{ steps.discover.outputs.count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - name: Discover releases
+        id: discover
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          matrix=$(scripts/discover.sh)
+          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+          echo "count=$(jq length <<< "$matrix")" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,3 @@
+source-path=SCRIPTDIR
+# jq programs in single quotes
+disable=SC2016

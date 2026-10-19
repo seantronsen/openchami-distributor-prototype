@@ -1,0 +1,17 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "github>OpenCHAMI/.github//renovate-config/default",
+    "config:recommended"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Commit-pinned script URLs annotated with a preceding '# renovate: ... currentValue=<tag>' comment",
+      "managerFilePatterns": ["/^scripts/lib\\.sh$/"],
+      "matchStrings": [
+        "#\\s*renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) currentValue=(?<currentValue>\\S+)\\s*\\n\\s*[A-Z_]+=https://raw\\.githubusercontent\\.com/[^/]+/[^/]+/(?<currentDigest>[0-9a-f]{40})/"
+      ]
+    }
+  ]
+}
