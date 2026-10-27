@@ -191,6 +191,39 @@ gateway can't start, and says so.
 Before changing anything, setup and teardown refuse unless every repo is public, not a fork, and
 either empty or carrying the `.distributor-it` marker file the suite pushes.
 
+## Writing tests
+
+Layout: `lib/` is shared by the run scripts and both suites (host side: config, launch; container
+side: settings, container), `ci/lib/` and `distro/lib/` are each suite's own, and
+`<suite>/cases/<name>.bats` holds the tests. The harness doesn't know its cases: a case needs
+nothing registered anywhere else.
+
+Code conventions:
+
+- Each lib file starts with a one-line statement of its purpose. If it can't be brief, the file
+  mixes concerns and gets split.
+- Function names are `module__function` (double underscore; words use `_`), the module being
+  the file name: `wait__until`, `github__jobs_concluded`.
+- Every function has a doc comment between two banners of exactly 80 `#`, with `Arguments:`,
+  `Outputs:`, and `Returns:` as they apply.
+- Each file sources its own dependencies, after an include guard:
+
+  ```bash
+  [[ -n ${_IT_WAIT_SH:-} ]] && return 0
+  _IT_WAIT_SH=1
+  ```
+
+- Dependencies flow one way, never upward or in a cycle. Nothing mutable is shared across files:
+  only functions cross file boundaries, and values come back on stdout, never through a global.
+- Settings come only from `settings__get` (container) or `config__get` (host): no defaults in the
+  code and no settings in the environment. A new setting goes in `config.defaults.yaml`.
+- Checks report every problem before failing: set `failed=true` per problem, log it, and return
+  1 at the end. `log__fatal` only in scripts; lib functions return.
+- Lines are at most 100 characters. shellcheck is clean with the suite's `.shellcheckrc`.
+- Wait on GitHub with `wait__until` or `wait__check`, never a fixed sleep.
+- Every file ends `.sh` or `.bats`, executables too. Reusable routines go in lib files, and a
+  file sources only the libs it calls.
+
 ## Notes
 
 - Not covered: the scheduler (GitHub's cron is unreliable), the release publisher check (not
