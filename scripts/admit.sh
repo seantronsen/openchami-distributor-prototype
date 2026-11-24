@@ -51,7 +51,7 @@ finish_admission() {
 
 ################################################################################
 # Rejects the release unless everyone who pushed its tag or ran its push runs may publish this
-# repo (config `publishers`). Backstop for a repo missing its `v*` tag ruleset.
+# repo (config `publishers`): the service repo's release workflow signs any `v*` tag.
 #
 # Every run counts, not just the latest: the API doesn't say which run published the release.
 # E.g. a non-publisher's run publishes, then a publisher re-pushes the tag; that run fails the

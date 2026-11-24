@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "state.schema.json",
   "title": "Distributor state (state/state.json)",
-  "description": "Every release processed and every package published or pruned. See State in docs/spec.md.",
+  "description": "Every release processed and every package published or pruned. See docs/design/state.md.",
   "type": "object",
   "propertyNames": {
     "description": "<owner>/<repo>@<tag>, or openchami-keyring@<version>.",

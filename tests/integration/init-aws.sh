@@ -42,7 +42,7 @@ s3_init__bucket_policy() {
 
 ################################################################################
 # The user's policy: the distributor's needs on this bucket only. s3:ListBucket makes a
-# missing object read as missing, not as access denied (docs/deployment.md).
+# missing object read as missing, not as access denied (docs/operations/deployment.md).
 # Arguments:
 #   Bucket.
 # Outputs:

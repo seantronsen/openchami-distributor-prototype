@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: MIT
 
 # Re-signs the published repositories with the current archive key after a key switch
-# (spec-deferred.md, Rotation, step 4). Safe to rerun: it resumes from signed_with in state.
+# (docs/operations/archive-key/rotation.md, step 4). Safe to rerun: it resumes from signed_with in
+# state.
 name: rekey
 
 on:

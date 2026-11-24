@@ -39,9 +39,9 @@
 #                       Packages are always cached indefinitely.
 #
 # Credentials come from the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY secrets;
-# the ARCHIVE_GPG_KEY secret signs. Bucket setup: docs/deployment.md.
+# the ARCHIVE_GPG_KEY secret signs. Bucket setup: docs/operations/deployment.md.
 #
-# TODO: the real bucket (a group decision, docs/deployment.md). Until it exists
+# TODO: the real bucket (a group decision, docs/operations/deployment.md). Until it exists
 # and the secrets are set, every poll fails at its keys job.
 target:
   s3: {bucket: openchami-packages, region: us-east-1, metadata_max_age: 300}
@@ -77,7 +77,7 @@ archive_key:
 # the release's repo, or the release is rejected. Anyone not listed may publish
 # nothing.
 #
-# This backs up the `v*` tag ruleset each service repo needs: the release
+# This is what decides whose releases get published: a service repo's release
 # workflow signs whatever a `v*` tag points at, for whoever pushed it.
 #
 # Keyed by GitHub user ID, the only thing checked: a username can be renamed and
