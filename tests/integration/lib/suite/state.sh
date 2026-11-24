@@ -32,7 +32,7 @@ state__has() {
 }
 
 ################################################################################
-# Whether the state matches state/state.schema.json, checked as the distributor's workflows
+# Whether the state matches schemas/state.schema.json, checked as the distributor's workflows
 # check it.
 # Returns:
 #   0 when it does, 1 when it doesn't (the errors on stdout) or can't be read.
